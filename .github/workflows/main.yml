@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   dsa-css-check:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]
     timeout-minutes: 15
 
     steps:
