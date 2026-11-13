@@ -1,7 +1,6 @@
 from pathlib import Path
 
-import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page
 
 BASE_URL = "https://dev-dsaapp.basichomeloan.com"
 ARTIFACTS_DIR = Path("artifacts")
@@ -40,10 +39,9 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
     # Some real-world pages intentionally keep the body hidden until hydration
     # completes. This test checks CSS availability, not a specific visibility state.
     body = page.locator("body")
-    assert body.count() == 1, "Expected a document body element to exist."
-    page.wait_for_timeout(3000)  # Allow client-side styles/scripts to finish.
+    assert body.count() == 1, "Expected a document body element."
+    page.wait_for_timeout(3000)
 
-    # Inspect external stylesheets and their load state.
     stylesheets = page.locator('link[rel~="stylesheet"]').evaluate_all(
         """links => links.map(link => ({
             href: link.href,
@@ -51,8 +49,6 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
         }))"""
     )
 
-    # Also inspect inline styles and computed style so apps using bundled
-    # or injected CSS are not incorrectly treated as unstyled.
     css_info = page.evaluate(
         """() => {
             const body = document.body;
@@ -74,11 +70,8 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
     print("HTTP errors:", http_errors)
     print("Failed requests:", failed_requests)
 
-    # Save useful diagnostics even when assertions fail.
     page.screenshot(path=str(ARTIFACTS_DIR / "dsa-homepage.png"), full_page=True)
 
-    # Fail only when there is no CSS at all. A page may use inline or
-    # dynamically injected styles rather than <link> stylesheet elements.
     assert css_info["stylesheetCount"] > 0, (
         "No stylesheets detected. Check the browser Network/Console logs."
     )
@@ -90,7 +83,7 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
 
 
 def test_dsa_app_homepage_screenshot(page: Page):
-    """Open the application homepage and save a full-page screenshot artifact."""
+    """Wait for the login UI to render before saving the full-page screenshot."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
     response = page.goto(
@@ -98,15 +91,20 @@ def test_dsa_app_homepage_screenshot(page: Page):
         wait_until="domcontentloaded",
         timeout=60_000,
     )
-
     assert response is not None, "Navigation did not return a response."
     assert response.status < 400, (
         f"Application returned HTTP {response.status}: {BASE_URL}"
     )
-    assert page.locator("body").count() == 1, "Expected a document body element."
 
-    # Allow client-side rendering to settle before capturing the full page.
-    page.wait_for_timeout(3000)
+    # A body element alone can exist on a blank or not-yet-hydrated SPA page.
+    # Wait for the mobile login field shown on the actual application page.
+    mobile_input = page.get_by_placeholder("Enter your mobile number", exact=False)
+    mobile_input.wait_for(state="visible", timeout=60_000)
+
+    # Allow fonts and client-side visual updates to settle before capture.
+    page.evaluate("() => document.fonts.ready")
+    page.wait_for_timeout(1000)
+
     screenshot_path = ARTIFACTS_DIR / "dsa-homepage-screenshot.png"
     page.screenshot(path=str(screenshot_path), full_page=True)
 
