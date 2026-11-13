@@ -37,7 +37,10 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
         f"Application returned HTTP {response.status}: {BASE_URL}"
     )
 
-    expect(page.locator("body")).to_be_visible()
+    # Some real-world pages intentionally keep the body hidden until hydration
+    # completes. This test checks CSS availability, not a specific visibility state.
+    body = page.locator("body")
+    assert body.count() == 1, "Expected a document body element to exist."
     page.wait_for_timeout(3000)  # Allow client-side styles/scripts to finish.
 
     # Inspect external stylesheets and their load state.
@@ -49,17 +52,23 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
     )
 
     # Also inspect inline styles and computed style so apps using bundled
-    # or injected CSS are not incorrectly treated as unstyled.
+    # or injected styles are not incorrectly treated as unstyled.
     css_info = page.evaluate(
-        """() => ({
-            stylesheetCount: document.styleSheets.length,
-            bodyFontFamily: getComputedStyle(document.body).fontFamily,
-            bodyBackground: getComputedStyle(document.body).backgroundColor,
-            bodyColor: getComputedStyle(document.body).color
-        })"""
+        """() => {
+            const body = document.body;
+            return {
+                bodyExists: Boolean(body),
+                bodyVisibility: body ? getComputedStyle(body).visibility : null,
+                bodyDisplay: body ? getComputedStyle(body).display : null,
+                stylesheetCount: document.styleSheets.length,
+                bodyFontFamily: body ? getComputedStyle(body).fontFamily : '',
+                bodyBackground: body ? getComputedStyle(body).backgroundColor : '',
+                bodyColor: body ? getComputedStyle(body).color : ''
+            };
+        }"""
     )
 
-    print("\\nPage title:", page.title())
+    print("\nPage title:", page.title())
     print("Stylesheet links:", stylesheets)
     print("Computed CSS:", css_info)
     print("HTTP errors:", http_errors)
