@@ -52,7 +52,7 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
     )
 
     # Also inspect inline styles and computed style so apps using bundled
-    # or injected styles are not incorrectly treated as unstyled.
+    # or injected CSS are not incorrectly treated as unstyled.
     css_info = page.evaluate(
         """() => {
             const body = document.body;
@@ -87,3 +87,28 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
     assert not unloaded_links, (
         f"One or more linked CSS stylesheets did not load: {unloaded_links}"
     )
+
+
+def test_dsa_app_homepage_screenshot(page: Page):
+    """Open the application homepage and save a full-page screenshot artifact."""
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    response = page.goto(
+        BASE_URL,
+        wait_until="domcontentloaded",
+        timeout=60_000,
+    )
+
+    assert response is not None, "Navigation did not return a response."
+    assert response.status < 400, (
+        f"Application returned HTTP {response.status}: {BASE_URL}"
+    )
+    assert page.locator("body").count() == 1, "Expected a document body element."
+
+    # Allow client-side rendering to settle before capturing the full page.
+    page.wait_for_timeout(3000)
+    screenshot_path = ARTIFACTS_DIR / "dsa-homepage-screenshot.png"
+    page.screenshot(path=str(screenshot_path), full_page=True)
+
+    assert screenshot_path.is_file(), "The homepage screenshot was not created."
+    assert screenshot_path.stat().st_size > 0, "The homepage screenshot is empty."
