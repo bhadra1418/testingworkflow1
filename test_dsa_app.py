@@ -2,7 +2,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page
 
-BASE_URL = "https://dev-dsaapp.basichomeloan.com"
+BASE_URL = "https://www.google.com"
 ARTIFACTS_DIR = Path("artifacts")
 
 
