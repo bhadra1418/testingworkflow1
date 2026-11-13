@@ -1,4 +1,5 @@
 name: Playwright Tests
+
 on:
   push:
     branches: [ main ]
@@ -7,12 +8,8 @@ on:
 
 jobs:
   playwright:
-    name: 'Playwright Tests'
+    name: "Playwright Tests"
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright/python:v1.55.0-noble
-      options: --user 1001
-
     steps:
       - uses: actions/checkout@v5
 
