@@ -6,6 +6,39 @@ BASE_URL = "https://dev-dsaapp.basichomeloan.com"
 ARTIFACTS_DIR = Path("artifacts")
 
 
+def _save_failure_diagnostics(page: Page, error: Exception, diagnostics: dict) -> None:
+    """Save browser state when a page assertion fails, then retain it as an artifact."""
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    diagnostics["failure"] = repr(error)
+
+    try:
+        diagnostics["url"] = page.url
+        diagnostics["title"] = page.title()
+        diagnostics["inputs"] = page.locator("input").evaluate_all(
+            "inputs => inputs.map(input => ({"
+            "type: input.type, placeholder: input.placeholder, "
+            "ariaLabel: input.getAttribute('aria-label'), visible: "
+            "Boolean(input.getClientRects().length)"
+            "}))"
+        )
+        diagnostics["bodyText"] = page.locator("body").inner_text(timeout=3000)[:5000]
+        (ARTIFACTS_DIR / "dsa-homepage-failure.html").write_text(
+            page.content(), encoding="utf-8"
+        )
+        page.screenshot(
+            path=str(ARTIFACTS_DIR / "dsa-homepage-failure.png"),
+            full_page=True,
+            timeout=10_000,
+        )
+    except Exception as diagnostic_error:
+        diagnostics["diagnostic_capture_error"] = repr(diagnostic_error)
+
+    (ARTIFACTS_DIR / "dsa-homepage-failure.txt").write_text(
+        "\n".join(f"{key}: {value}" for key, value in diagnostics.items()),
+        encoding="utf-8",
+    )
+
+
 def test_dsa_app_loads_and_css_is_available(page: Page):
     ARTIFACTS_DIR.mkdir(exist_ok=True)
 
@@ -83,8 +116,31 @@ def test_dsa_app_loads_and_css_is_available(page: Page):
 
 
 def test_dsa_app_homepage_screenshot(page: Page):
-    """Wait for the login UI to render before saving the full-page screenshot."""
+    """Wait for the login UI and capture diagnostics if it does not render."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    failed_requests = []
+    http_errors = []
+    console_errors = []
+    page_errors = []
+    page.on(
+        "requestfailed",
+        lambda request: failed_requests.append(
+            f"{request.method} {request.url} - {request.failure}"
+        ),
+    )
+    page.on(
+        "response",
+        lambda response: http_errors.append(
+            f"HTTP {response.status}: {response.url}"
+        ) if response.status >= 400 else None,
+    )
+    page.on(
+        "console",
+        lambda message: console_errors.append(message.text)
+        if message.type == "error" else None,
+    )
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
 
     response = page.goto(
         BASE_URL,
@@ -96,10 +152,22 @@ def test_dsa_app_homepage_screenshot(page: Page):
         f"Application returned HTTP {response.status}: {BASE_URL}"
     )
 
-    # A body element alone can exist on a blank or not-yet-hydrated SPA page.
-    # Wait for the mobile login field shown on the actual application page.
     mobile_input = page.get_by_placeholder("Enter your mobile number", exact=False)
-    mobile_input.wait_for(state="visible", timeout=60_000)
+    try:
+        mobile_input.wait_for(state="visible", timeout=60_000)
+    except Exception as error:
+        _save_failure_diagnostics(
+            page,
+            error,
+            {
+                "expected_placeholder": "Enter your mobile number",
+                "http_errors": http_errors,
+                "failed_requests": failed_requests,
+                "console_errors": console_errors,
+                "page_errors": page_errors,
+            },
+        )
+        raise
 
     # Allow fonts and client-side visual updates to settle before capture.
     page.evaluate("() => document.fonts.ready")
